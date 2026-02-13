@@ -1,0 +1,27 @@
+# VNC
+.vnc/
+*.log
+
+# Certificates
+*.pem
+*.key
+*.crt
+
+# Docker
+*.tar
+*.img
+
+# Environment files
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Python (if later used)
+__pycache__/
+*.pyc
