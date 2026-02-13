@@ -1,8 +1,9 @@
 FROM --platform=linux/amd64 ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV DISPLAY=:1
 
-# Install minimal X + VNC + terminal
+# Install minimal packages
 RUN apt update && apt install -y --no-install-recommends \
     tigervnc-standalone-server \
     novnc \
@@ -12,9 +13,9 @@ RUN apt update && apt install -y --no-install-recommends \
     x11-xserver-utils \
     openssl \
     fonts-dejavu-core \
-    && apt clean
+    && apt clean && rm -rf /var/lib/apt/lists/*
 
-# Configure VNC to launch a full dark terminal
+# Create VNC startup file for full dark terminal
 RUN mkdir -p /root/.vnc && \
     echo '#!/bin/sh\n\
 unset SESSION_MANAGER\n\
@@ -30,11 +31,9 @@ exec xterm \
 
 RUN touch /root/.Xauthority
 
-EXPOSE 5901
-EXPOSE 6080
-
+# Railway requires app to bind to $PORT
 CMD bash -c "\
     vncserver -localhost no -SecurityTypes None -geometry 1280x800 --I-KNOW-THIS-IS-INSECURE && \
     openssl req -new -subj '/C=JP' -x509 -days 365 -nodes -out self.pem -keyout self.pem && \
-    websockify --web=/usr/share/novnc/ --cert=self.pem 6080 localhost:5901 \
+    websockify --web=/usr/share/novnc/ --cert=self.pem 0.0.0.0:$PORT localhost:5901 \
 "
