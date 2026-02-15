@@ -18,28 +18,44 @@ RUN python3 -m pip install --upgrade pip
 RUN python3 -m pip install jupyterlab
 
 # ------------------------------------------------
-# Improve bash
+# Improve bash experience
 # ------------------------------------------------
 RUN echo 'export TERM=xterm-256color' >> /root/.bashrc && \
     echo 'neofetch' >> /root/.bashrc
 
 # ------------------------------------------------
-# Configure nginx
+# Configure nginx (single public port 8080)
 # ------------------------------------------------
-RUN rm /etc/nginx/sites-enabled/default
+RUN rm -f /etc/nginx/sites-enabled/default
 
 RUN cat <<EOF > /etc/nginx/sites-enabled/default
 server {
     listen 8080;
     server_name _;
 
-    # Stable health endpoint (for UptimeRobot)
+    # Health endpoint (supports GET + HEAD)
     location = /health {
         default_type text/plain;
         return 200 "OK";
     }
 
-    # Jupyter proxy
+    # Handle Railway HEAD health checks on /
+    location = / {
+        if (\$request_method = HEAD) {
+            return 200;
+        }
+
+        proxy_pass http://127.0.0.1:8888;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    # Proxy everything else to Jupyter
     location / {
         proxy_pass http://127.0.0.1:8888;
         proxy_set_header Host \$host;
@@ -69,7 +85,7 @@ jupyter lab \
   --ServerApp.allow_origin='*' \
   --ServerApp.base_url='/' &
 
-# Start nginx (foreground)
+# Start nginx in foreground
 nginx -g "daemon off;"
 EOF
 
