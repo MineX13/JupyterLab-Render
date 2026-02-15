@@ -1,7 +1,9 @@
 FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 
-# System update + packages
+# -----------------------------
+# Install system packages
+# -----------------------------
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
@@ -19,50 +21,69 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip
-RUN python3 -m pip install --upgrade pip
-
+# -----------------------------
 # Install JupyterLab
+# -----------------------------
+RUN python3 -m pip install --upgrade pip
 RUN python3 -m pip install jupyterlab
 
+# -----------------------------
 # Install ttyd (web terminal)
+# -----------------------------
 RUN wget https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64 \
     -O /usr/local/bin/ttyd \
     && chmod +x /usr/local/bin/ttyd
 
-# Dark bash + auto neofetch
+# -----------------------------
+# Dark bash theme + auto neofetch
+# -----------------------------
 RUN echo 'export TERM=xterm-256color' >> /root/.bashrc && \
     echo 'neofetch' >> /root/.bashrc
 
-# Remove default nginx config
+# -----------------------------
+# Nginx Reverse Proxy (ONE PORT)
+# -----------------------------
 RUN rm /etc/nginx/sites-enabled/default
 
-# Reverse proxy (single Railway port)
-RUN echo 'server {
+RUN cat <<EOF > /etc/nginx/sites-enabled/default
+server {
     listen 8080;
 
     location / {
         proxy_pass http://127.0.0.1:8888;
-        proxy_set_header Host $host;
-        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Host \$host;
+        proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
     }
 
     location /terminal/ {
         proxy_pass http://127.0.0.1:7681/;
-        proxy_set_header Host $host;
-        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Host \$host;
+        proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
     }
-}' > /etc/nginx/sites-enabled/default
+}
+EOF
 
-# Startup script
-RUN echo '#!/bin/bash
-ttyd -p 7681 -t theme={"background":"#0d1117","foreground":"#c9d1d9"} bash &
+# -----------------------------
+# Startup Script
+# -----------------------------
+RUN cat <<EOF > /start.sh
+#!/bin/bash
+
+# Start terminal (dark theme)
+ttyd -p 7681 -t theme='{"background":"#0d1117","foreground":"#c9d1d9"}' bash &
+
+# Start Jupyter
 jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token="" &
-nginx -g "daemon off;"
-' > /start.sh && chmod +x /start.sh
 
+# Start nginx (main process)
+nginx -g "daemon off;"
+EOF
+
+RUN chmod +x /start.sh
+
+# Railway exposes ONE port only
 EXPOSE 8080
 
 CMD ["/start.sh"]
