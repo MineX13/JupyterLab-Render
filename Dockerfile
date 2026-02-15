@@ -28,26 +28,34 @@ RUN python3 -m pip install --upgrade pip
 RUN python3 -m pip install jupyterlab
 
 # -----------------------------
-# Install ttyd (web terminal)
+# Install ttyd
 # -----------------------------
 RUN wget https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64 \
     -O /usr/local/bin/ttyd \
     && chmod +x /usr/local/bin/ttyd
 
 # -----------------------------
-# Dark terminal config
+# Dark bash
 # -----------------------------
 RUN echo 'export TERM=xterm-256color' >> /root/.bashrc && \
     echo 'neofetch' >> /root/.bashrc
 
 # -----------------------------
-# Nginx reverse proxy (ONE PORT)
+# Startup script (Railway-safe)
 # -----------------------------
-RUN rm /etc/nginx/sites-enabled/default
+RUN cat <<EOF > /start.sh
+#!/bin/bash
 
-RUN cat <<EOF > /etc/nginx/sites-enabled/default
+# Start terminal on 7681
+ttyd -p 7681 -t theme='{"background":"#0d1117","foreground":"#c9d1d9"}' bash &
+
+# Start Jupyter on 8888
+jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token="" &
+
+# Create nginx config using Railway \$PORT
+cat <<EONGINX > /etc/nginx/sites-enabled/default
 server {
-    listen 8080;
+    listen \$PORT;
 
     location /terminal {
         proxy_pass http://127.0.0.1:7681;
@@ -65,26 +73,11 @@ server {
         proxy_set_header Host \$host;
     }
 }
-EOF
+EONGINX
 
-# -----------------------------
-# Startup Script
-# -----------------------------
-RUN cat <<EOF > /start.sh
-#!/bin/bash
-
-# Start ttyd terminal (dark theme)
-ttyd -p 7681 -t theme='{"background":"#0d1117","foreground":"#c9d1d9"}' bash &
-
-# Start Jupyter
-jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token="" &
-
-# Start nginx (main process)
 nginx -g "daemon off;"
 EOF
 
 RUN chmod +x /start.sh
-
-EXPOSE 8080
 
 CMD ["/start.sh"]
