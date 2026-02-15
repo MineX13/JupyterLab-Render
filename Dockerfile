@@ -35,13 +35,13 @@ RUN wget https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64 \
     && chmod +x /usr/local/bin/ttyd
 
 # -----------------------------
-# Dark bash theme + auto neofetch
+# Dark terminal config
 # -----------------------------
 RUN echo 'export TERM=xterm-256color' >> /root/.bashrc && \
     echo 'neofetch' >> /root/.bashrc
 
 # -----------------------------
-# Nginx Reverse Proxy (ONE PORT)
+# Nginx reverse proxy (ONE PORT)
 # -----------------------------
 RUN rm /etc/nginx/sites-enabled/default
 
@@ -49,18 +49,20 @@ RUN cat <<EOF > /etc/nginx/sites-enabled/default
 server {
     listen 8080;
 
-    location / {
-        proxy_pass http://127.0.0.1:8888;
-        proxy_set_header Host \$host;
+    location /terminal {
+        proxy_pass http://127.0.0.1:7681;
+        proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
     }
 
-    location /terminal/ {
-        proxy_pass http://127.0.0.1:7681/;
-        proxy_set_header Host \$host;
+    location / {
+        proxy_pass http://127.0.0.1:8888;
+        proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
     }
 }
 EOF
@@ -71,7 +73,7 @@ EOF
 RUN cat <<EOF > /start.sh
 #!/bin/bash
 
-# Start terminal (dark theme)
+# Start ttyd terminal (dark theme)
 ttyd -p 7681 -t theme='{"background":"#0d1117","foreground":"#c9d1d9"}' bash &
 
 # Start Jupyter
@@ -83,7 +85,6 @@ EOF
 
 RUN chmod +x /start.sh
 
-# Railway exposes ONE port only
 EXPOSE 8080
 
 CMD ["/start.sh"]
