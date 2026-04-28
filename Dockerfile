@@ -2,13 +2,17 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 # ------------------------------------------------
-# Install system packages
+# Install system packages & Playwright dependencies
 # ------------------------------------------------
 RUN apt-get update && apt-get install -y \
     python3 python3-pip python3-dev \
     build-essential libffi-dev libssl-dev libzmq3-dev \
     ca-certificates curl wget nginx git tmux neofetch \
     ttyd \
+    # Playwright Chromium dependencies
+    libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
+    libcups2 libdrm2 libxkbcommon0 libxcomposite1 \
+    libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 \
     && rm -rf /var/lib/apt/lists/*
 
 # ------------------------------------------------
@@ -65,7 +69,20 @@ server {
         proxy_set_header Connection "upgrade";
     }
 
-    # ── /cap → ttyd web terminal ──────────────────────────────────────
+    # ── /captcha/api → Captcha Solver Backend (Port 5000) ─────────────
+    location /captcha/api {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # Optional WebSocket support if you use it later
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    # ── /cap → ttyd web terminal (Port 7681) ──────────────────────────
     location /cap {
         proxy_pass http://127.0.0.1:7681;
         proxy_set_header Host $host;
@@ -78,7 +95,7 @@ server {
         proxy_read_timeout 43200s;
     }
 
-    # ── Everything else → JupyterLab ─────────────────────────────────
+    # ── Everything else → JupyterLab (Port 8888) ─────────────────────
     location / {
         proxy_pass http://127.0.0.1:8888;
         proxy_set_header Host $host;
