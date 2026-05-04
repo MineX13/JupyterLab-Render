@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y \
     python3 python3-pip python3-dev \
     build-essential libffi-dev libssl-dev libzmq3-dev \
     ca-certificates curl wget nginx git tmux neofetch \
-    ttyd \
+    ttyd sudo postgresql postgresql-contrib redis-server \
     # Playwright Chromium dependencies
     libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
     libcups2 libdrm2 libxkbcommon0 libxcomposite1 \
@@ -28,8 +28,27 @@ RUN python3 -m pip install fastapi uvicorn "pydantic-settings" asyncpg redis log
 # Create /captcha folder (shared workspace)
 # ------------------------------------------------
 RUN mkdir -p /captcha
-# Create dir for the panel code
+# ------------------------------------------------
+# Create dir for the panel code & copy project files
+# ------------------------------------------------
 RUN mkdir -p /app
+WORKDIR /app
+# We need to copy the files early so npm run build can find them if this is built by Railway.
+# Note: Railway copies all files automatically, but local Docker builds need a copy command.
+# For Railway Nixpacks/Docker, everything is at /app.
+
+# ------------------------------------------------
+# Install Node.js & Build Frontend
+# ------------------------------------------------
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs
+
+# Copy all local project files into /app
+COPY . /app/
+
+# Build the frontend explicitly inside the Docker container
+RUN cd /app/panel/frontend && npm install && npm run build
+
 
 # ------------------------------------------------
 # Improve bash experience
@@ -134,6 +153,14 @@ EOF
 # ------------------------------------------------
 RUN cat <<'EOF' > /start.sh
 #!/bin/bash
+
+# Start PostgreSQL and initialize Database if missing
+/etc/init.d/postgresql start
+# Wait for postgres to be ready
+sleep 2
+sudo -u postgres psql -c "CREATE USER \"user\" WITH PASSWORD 'password';" || true
+sudo -u postgres psql -c "ALTER USER \"user\" WITH SUPERUSER;" || true
+sudo -u postgres createdb -O "user" bot_hosting || true
 
 # Start JupyterLab (rooted at /captcha so it opens there by default)
 jupyter lab \
