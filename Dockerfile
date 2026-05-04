@@ -16,39 +16,29 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ------------------------------------------------
-# Install JupyterLab & Panel Dependencies
-# ------------------------------------------------
-RUN python3 -m pip install --upgrade pip
-RUN python3 -m pip install jupyterlab
-# Assuming the panel dependencies are in the controller/requirements.txt
-# For now, we install common FastAPI dependencies
-RUN python3 -m pip install fastapi uvicorn "pydantic-settings" asyncpg redis loguru python-multipart PyJWT
-
-# ------------------------------------------------
-# Create /captcha folder (shared workspace)
-# ------------------------------------------------
-RUN mkdir -p /captcha
-# ------------------------------------------------
-# Create dir for the panel code & copy project files
-# ------------------------------------------------
-RUN mkdir -p /app
-WORKDIR /app
-# We need to copy the files early so npm run build can find them if this is built by Railway.
-# Note: Railway copies all files automatically, but local Docker builds need a copy command.
-# For Railway Nixpacks/Docker, everything is at /app.
-
-# ------------------------------------------------
-# Install Node.js & Build Frontend
+# Install Node.js (for later frontend use)
 # ------------------------------------------------
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs
 
-# Copy all local project files into /app
+# ------------------------------------------------
+# Install JupyterLab & Panel Dependencies
+# ------------------------------------------------
+RUN python3 -m pip install --upgrade pip
+RUN python3 -m pip install jupyterlab
+RUN python3 -m pip install fastapi uvicorn "pydantic-settings" asyncpg redis loguru python-multipart PyJWT
+
+# ------------------------------------------------
+# Create folders
+# ------------------------------------------------
+RUN mkdir -p /captcha
+RUN mkdir -p /app
+
+# ------------------------------------------------
+# Copy project files
+# ------------------------------------------------
+WORKDIR /app
 COPY . /app/
-
-# Build the frontend explicitly inside the Docker container
-RUN cd /app/panel/frontend && npm install && npm run build
-
 
 # ------------------------------------------------
 # Improve bash experience
@@ -66,7 +56,6 @@ server {
     listen 8080;
     server_name _;
 
-    # ── UptimeRobot / Railway health checks ──────────────────────────
     location = /health {
         default_type text/plain;
         return 200 "OK";
@@ -77,14 +66,9 @@ server {
         return 200 "OK";
     }
 
-    # ── /website → MineNodes Panel (Port 7000) ───────────────────────
     location /website {
-        # proxy_pass to the panel running on port 7000
-        proxy_pass http://127.0.0.1:7000/; # Trailing slash is important for stripping /website
-        
-        # Rewrite the path so the backend sees it as /
+        proxy_pass http://127.0.0.1:7000/;
         rewrite ^/website(/.*)$ $1 break;
-        
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -94,7 +78,6 @@ server {
         proxy_set_header Connection "upgrade";
     }
 
-    # ── /panel-api → MineNodes Panel API (Port 7000) ───────────────────────
     location /panel-api {
         proxy_pass http://127.0.0.1:7000/panel-api;
         proxy_set_header Host $host;
@@ -106,7 +89,6 @@ server {
         proxy_set_header Connection "upgrade";
     }
 
-    # ── /captcha/api → Captcha Solver Backend (Port 5000) ─────────────
     location /captcha/api {
         proxy_pass http://127.0.0.1:5000;
         proxy_set_header Host $host;
@@ -118,7 +100,6 @@ server {
         proxy_set_header Connection "upgrade";
     }
 
-    # ── /cap → ttyd web terminal (Port 7681) ──────────────────────────
     location /cap {
         proxy_pass http://127.0.0.1:7681;
         proxy_set_header Host $host;
@@ -131,7 +112,6 @@ server {
         proxy_read_timeout 43200s;
     }
 
-    # ── Everything else → JupyterLab (Port 8888) ─────────────────────
     location / {
         if ($request_method = HEAD) {
             return 200;
@@ -154,15 +134,17 @@ EOF
 RUN cat <<'EOF' > /start.sh
 #!/bin/bash
 
-# Start PostgreSQL and initialize Database if missing
+# Start Redis
+redis-server --daemonize yes
+
+# Start PostgreSQL
 /etc/init.d/postgresql start
-# Wait for postgres to be ready
 sleep 2
 sudo -u postgres psql -c "CREATE USER \"user\" WITH PASSWORD 'password';" || true
 sudo -u postgres psql -c "ALTER USER \"user\" WITH SUPERUSER;" || true
 sudo -u postgres createdb -O "user" bot_hosting || true
 
-# Start JupyterLab (rooted at /captcha so it opens there by default)
+# Start JupyterLab
 jupyter lab \
   --ip=0.0.0.0 \
   --port=8888 \
@@ -173,7 +155,7 @@ jupyter lab \
   --ServerApp.base_url='/' \
   --ServerApp.root_dir='/' &
 
-# Start ttyd web terminal at /cap, working directory /captcha
+# Start ttyd web terminal
 ttyd \
   --port 7681 \
   --base-path /cap \
