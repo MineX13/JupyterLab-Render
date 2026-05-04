@@ -16,15 +16,20 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ------------------------------------------------
-# Install JupyterLab
+# Install JupyterLab & Panel Dependencies
 # ------------------------------------------------
 RUN python3 -m pip install --upgrade pip
 RUN python3 -m pip install jupyterlab
+# Assuming the panel dependencies are in the controller/requirements.txt
+# For now, we install common FastAPI dependencies
+RUN python3 -m pip install fastapi uvicorn "pydantic-settings" asyncpg redis loguru python-multipart PyJWT
 
 # ------------------------------------------------
 # Create /captcha folder (shared workspace)
 # ------------------------------------------------
 RUN mkdir -p /captcha
+# Create dir for the panel code
+RUN mkdir -p /app
 
 # ------------------------------------------------
 # Improve bash experience
@@ -48,18 +53,31 @@ server {
         return 200 "OK";
     }
 
-    # Pingable endpoint for UptimeRobot (GET + HEAD on /cap/ping)
     location = /cap/ping {
         default_type text/plain;
         return 200 "OK";
     }
 
-    # HEAD on / for Railway
-    location = / {
-        if ($request_method = HEAD) {
-            return 200;
-        }
-        proxy_pass http://127.0.0.1:8888;
+    # ── /website → MineNodes Panel (Port 7000) ───────────────────────
+    location /website {
+        # proxy_pass to the panel running on port 7000
+        proxy_pass http://127.0.0.1:7000/; # Trailing slash is important for stripping /website
+        
+        # Rewrite the path so the backend sees it as /
+        rewrite ^/website(/.*)$ $1 break;
+        
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    # ── /api → MineNodes Panel API (Port 7000) ───────────────────────
+    location /api {
+        proxy_pass http://127.0.0.1:7000/api;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -76,7 +94,6 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        # Optional WebSocket support if you use it later
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -97,6 +114,9 @@ server {
 
     # ── Everything else → JupyterLab (Port 8888) ─────────────────────
     location / {
+        if ($request_method = HEAD) {
+            return 200;
+        }
         proxy_pass http://127.0.0.1:8888;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -132,6 +152,9 @@ ttyd \
   --base-path /cap \
   --writable \
   bash &
+
+# Start MineNodes Backend & Panel
+(cd /app && python3 start.py) &
 
 # Start nginx in foreground
 nginx -g "daemon off;"
