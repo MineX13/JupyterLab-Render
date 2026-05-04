@@ -45,7 +45,7 @@ COPY . /app/
 # ------------------------------------------------
 RUN echo 'export TERM=xterm-256color' >> /root/.bashrc && \
     echo 'neofetch' >> /root/.bashrc && \
-    echo 'cd /captcha' >> /root/.bashrc
+    echo 'cd /' >> /root/.bashrc
 
 # ------------------------------------------------
 # Configure nginx
