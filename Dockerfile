@@ -144,7 +144,7 @@ jupyter lab \
   --ServerApp.token='' \
   --ServerApp.allow_origin='*' \
   --ServerApp.base_url='/' \
-  --ServerApp.root_dir='/captcha' &
+  --ServerApp.root_dir='/' &
 
 # Start ttyd web terminal at /cap, working directory /captcha
 ttyd \
